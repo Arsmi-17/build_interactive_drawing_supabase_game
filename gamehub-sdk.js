@@ -154,6 +154,7 @@
       wallet: false,
       ads: false,
       leaderboard: false,
+      pocket: false,      // subscribed to gamehub:pocket:input (a phone as controller)
     };
     // Unity reports its own wiring from C# — the .jslib subscribes to everything on the
     // game's behalf, so inferring from JS handlers there would mark every Unity game as
@@ -186,6 +187,39 @@
       onPlayerJoined: function (handler) { return self.on("gamehub:pocket:player_joined", handler); },
       onPlayerReconnected: function (handler) { return self.on("gamehub:pocket:player_reconnected", handler); },
       onPlayerLeft: function (handler) { return self.on("gamehub:pocket:player_left", handler); },
+
+      /**
+       * Move every phone to a screen the controller declared.
+       *
+       * `data` is yours and opaque to every hop between here and the phone — nothing inspects a
+       * key, supplies a default, or attaches meaning to a field name. It reaches the controller
+       * as the `detail.data` of a `pocket:screen` event.
+       *
+       * Deliberately NOT wired via _wire(): `pocket` means "this game handles phone input", and
+       * pushing a screen is not handling input. Two bits for one capability is how a game gets
+       * reported as supporting Pocket Console when it reads nothing.
+       */
+      setState: function (screen, data) {
+        self.emit("gamehub:pocket:state", { slot: null, screen: String(screen == null ? "" : screen), data: data || {} });
+      },
+
+      /**
+       * Move ONE seat. This is the whole of multiplayer state: a game where the first finisher
+       * ends it for everyone calls setState; a game where the others keep playing calls this for
+       * the seat that finished. A race needs both — seat-targeted as players cross the line, then
+       * setState("ranking") once all are done — which is why there is no mode to declare.
+       *
+       * A bad slot is logged rather than thrown: a game must not crash because it computed a seat
+       * wrong, and a silent drop would be worse than either.
+       */
+      setSeatState: function (slot, screen, data) {
+        var seat = Math.trunc(Number(slot));
+        if (!isFinite(seat) || seat < 1) {
+          self.log("warn", "pocket.setSeatState ignored: slot must be a whole number of 1 or more", { slot: slot, screen: screen });
+          return;
+        }
+        self.emit("gamehub:pocket:state", { slot: seat, screen: String(screen == null ? "" : screen), data: data || {} });
+      },
     };
     this.leaderboard = {
       // Declaring a board or posting a score IS using the leaderboard, so both mark it wired.
@@ -808,6 +842,7 @@
     "gamehub:ad:finished": "ads",
     "gamehub:leaderboard:sharing": "leaderboard",
     "gamehub:audio:muted": "mute",
+    "gamehub:pocket:input": "pocket",
   };
 
   GameHubSDK.prototype._wire = function (name) {
